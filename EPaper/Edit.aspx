@@ -46,7 +46,7 @@
     }
 
     function save() {
-
+        
     }
 
     function uploadEPaper() {
@@ -91,7 +91,7 @@
         if (evt.altKey) {
             return;
         }
-
+        //todo:
     }
 
     var onbodymousemove = function (evt) {
