@@ -1,2 +1,13 @@
-﻿body {
+﻿.e_rect_focus {
+    fill: transparent;
+    stroke-width: 1;
+    stroke: #a32f2f;
+}
+
+.e_rect_resizer {
+    fill: #FFFFFF;
+    stroke-width: 1;
+    stroke: #000000;
+    width: 7px;
+    height: 7px;
 }
