@@ -11,6 +11,7 @@
     <script src="Content/bootstrap/js/bootstrap.min.js"></script>
     <script src="Content/ajaxfileupload.js"></script>
     <link href="Content/epaper.css" rel="stylesheet" />
+    <script src="Content/json2.js"></script>
 </head>
 <body>
     <form id="form1" runat="server">
@@ -37,6 +38,24 @@
             </div>
         </div>
     </form>
+    <div class="modal fade" id="searchModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-body">
+                    <div id='modal_message' style="text-align: center">
+                        <h2>Processing</h2>
+                    </div>
+                    <div class="progress progress-striped active">
+                        <div class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="60"
+                            aria-valuemin="0" aria-valuemax="100" style="width: 100%;">
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- /.modal-content -->
+        </div>
+        <!-- /.modal -->
+    </div>
 </body>
 </html>
 <script type="text/javascript">
@@ -46,7 +65,36 @@
     }
 
     function save() {
-
+        var _svg = document.getElementById("svg1");
+        var shapes = [];
+        for (var i = 0; i < _svg.childNodes.length; i++) {
+            if (!_svg.childNodes[i].tagName || _svg.childNodes[i].getAttributeNS(null, "resizer")) {
+                continue;
+            }
+            var shape = {
+                type: _svg.childNodes[i].tagName,
+            };
+            switch (shape.type) {
+                case "rect":
+                    shape.x = _svg.childNodes[i].x.baseVal.value;
+                    shape.y = _svg.childNodes[i].y.baseVal.value;
+                    shape.height = _svg.childNodes[i].height.baseVal.value;
+                    shape.width = _svg.childNodes[i].width.baseVal.value;
+                    break;
+            }
+            shapes.push(shape);
+        }
+        $("#searchModal").modal("show");
+        $.ajax({
+            url: "<%=this.ResolveClientUrl("~/Process.ashx")%>",
+            type: "POST",
+            data: { m: "SaveEPaper", image: imageUrl, shapes: JSON.stringify(shapes) },
+            success: function () {
+                $("#searchModal").modal("hide");
+                redirectToIndex();
+            }
+        });
+        return false;
     }
 
     function uploadEPaper() {
@@ -56,6 +104,7 @@
             fileElementId: "file1",
             dataType: "json",
             success: function (data, status) {
+                imageUrl = data.url;
                 $("#svg1").css({ backgroundImage: "url(" + data.url + ")", width: data.width + "px", height: data.height + "px", left: "10px", top: "10px" });
                 if (!document.getElementById("rect_left_top")) {
                     createResizer("rect_left_top");
@@ -89,6 +138,7 @@
         rect.setAttributeNS(null, "id", id);
         rect.setAttributeNS(null, "class", "e_rect_resizer");
         rect.style.display = "none";
+        rect.setAttributeNS(null, "resizer", "1");
         switch (id) {
             case "rect_left_top":
             case "rect_right_bottom":
@@ -111,21 +161,56 @@
         $(rect).bind("mousedown", onresizermousedown);
     }
 
-    var startX, startY, adorner, choosed;
+    var startX, startY, adorner, choosed, isReleased, isMouseDown, imageUrl;
     document.getElementById("svg1").onmousedown = function (evt) {
+        isReleased = false;
+        $(document.body).bind("mouseup", onsvgmouseup);
+        document.onselectstart = function () { return false; };
         startX = evt.clientX;
         startY = evt.clientY;
-        if (evt.altKey) {
-            adorner = this;
-            this.style.cursor = "pointer";
-            $(document.body).bind("mousemove", onbodymousemove);
-            $("#svg1").bind("mouseup", onrelease).bind("mouseout", onrelease);
+        window.onsvgmousedowntimeout = setTimeout(function () {
+            if (window.onsvgmousedowntimeout) {
+                delete window.onsvgmousedowntimeout;
+            }
+            if (isReleased) {
+                document.onselectstart = null;
+                return;
+            }
+            isMouseDown = true;
+            if (evt.altKey) {
+                adorner = evt.target;
+                evt.target.style.cursor = "pointer";
+                $(document.body).bind("mousemove", onbodymousemove);
+                $("#svg1").bind("mouseup", onrelease).bind("mouseout", onrelease);
+            }
+            else {
+                if (!document.getElementById("rect_left_top")) {
+                    return;
+                }
+                adorner = { element: this };
+                $("#svg1").bind("mousemove", onsvgmousemove).bind("mouseup", onsvgrelease);
+                //.bind("mouseout", onsvgrelease)
+            }
+        }, 120);
+        evt.stopPropagation();
+    }
+
+    var onsvgmouseup = function () {
+        if (window.onsvgmousedowntimeout) {
+            clearTimeout(window.onsvgmousedowntimeout);
+            delete window.onsvgmousedowntimeout;
         }
-        else {
-            adorner = { element: this };
-            $("#svg1").bind("mousemove", onsvgmousemove).bind("mouseup", onsvgrelease);
-            //.bind("mouseout", onsvgrelease)
+        isReleased = true;
+        $(document.body).unbind("mouseup", onsvgmouseup);
+    }
+
+    document.getElementById("svg1").onclick = function () {
+        if (!choosed || isMouseDown) {
+            isMouseDown = false;
+            return;
         }
+        choosed = null;
+        hideResizer();
     }
 
     var onbodymousemove = function (evt) {
@@ -149,8 +234,6 @@
             adorner.pos.x = adorner.pos.x + parseFloat(this.style.left.replace("px", ""));
             adorner.pos.y = adorner.pos.y + parseFloat(this.style.top.replace("px", ""));
             adorner.rect = document.createElementNS(ns, "rect");
-            startX = evt.clientX;
-            startY = evt.clientY;
             adorner.rect.setAttributeNS(null, "x", startX - adorner.pos.x);
             adorner.rect.setAttributeNS(null, "y", startY - adorner.pos.y);
             adorner.rect.setAttributeNS(null, "class", "e_rect_focus");
@@ -176,7 +259,7 @@
         }
     }
 
-    var onsvgrelease = function () {
+    var onsvgrelease = function (evt) {
         if (adorner.rect) {
             calculateResizerPosition(adorner.rect);
         }
@@ -186,6 +269,7 @@
 
     var onrectclick = function (evt) {
         calculateResizerPosition(this);
+        evt.stopPropagation();
     }
 
     var onrectmousedown = function (evt) {
@@ -228,41 +312,68 @@
     }
 
     var onresizermousemove_body = function (evt) {
-        switch (adorner.resizer.getAttributeNS(null, "id")) {
-            case "rect_left_top":
-
-                break;
-            case "rect_top":
-                var height = adorner.initHeight + adorner.startY - evt.clientY;
-                if (height <= 0) {
-                    adorner.rect.setAttributeNS(null, "y", adorner.initY + adorner.initHeight);
-                    adorner.rect.setAttributeNS(null, "height", Math.abs(height));
-                }
-                else {
-                    var y = adorner.initY - (adorner.startY - evt.clientY);
-                    if (y < 0) {
-                        y = 0;
-                    }
-                    else {
-                        adorner.rect.setAttributeNS(null, "height", height);
-                    }
-                    adorner.rect.setAttributeNS(null, "y", y);
-                }
-                break;
-            case "rect_bottom":
-                var height = adorner.initHeight + evt.clientY - adorner.startY;
-                if (height <= 0) {
-                    var y = adorner.initY - (adorner.startY - evt.clientY - adorner.initHeight);
-                    if (y < 0) {
-                        y = 0;
-                    }
-                    adorner.rect.setAttributeNS(null, "y", y);
-                    adorner.rect.setAttributeNS(null, "height", Math.abs(height));
+        var resizerID = adorner.resizer.getAttributeNS(null, "id");
+        if (resizerID == "rect_top" || resizerID == "rect_left_top" || resizerID == "rect_right_top") {
+            var height = adorner.initHeight + adorner.startY - evt.clientY;
+            if (height <= 0) {
+                adorner.rect.setAttributeNS(null, "y", adorner.initY + adorner.initHeight);
+                adorner.rect.setAttributeNS(null, "height", Math.abs(height));
+            }
+            else {
+                var y = adorner.initY - (adorner.startY - evt.clientY);
+                if (y < 0) {
+                    y = 0;
                 }
                 else {
                     adorner.rect.setAttributeNS(null, "height", height);
                 }
-                break;
+                adorner.rect.setAttributeNS(null, "y", y);
+            }
+        }
+        if (resizerID == "rect_right" || resizerID == "rect_right_top" || resizerID == "rect_right_bottom") {
+            var width = adorner.initWidth + (evt.clientX - adorner.startX);
+            if (width <= 0) {
+                var x = adorner.initX - (adorner.startX - evt.clientX - adorner.initWidth);
+                if (x < 0) {
+                    x = 0;
+                }
+                adorner.rect.setAttributeNS(null, "x", x);
+                adorner.rect.setAttributeNS(null, "width", Math.abs(width));
+            }
+            else {
+                adorner.rect.setAttributeNS(null, "width", width);
+            }
+        }
+        if (resizerID == "rect_bottom" || resizerID == "rect_left_bottom" || resizerID == "rect_right_bottom") {
+            var height = adorner.initHeight + evt.clientY - adorner.startY;
+            if (height <= 0) {
+                var y = adorner.initY - (adorner.startY - evt.clientY - adorner.initHeight);
+                if (y < 0) {
+                    y = 0;
+                }
+                adorner.rect.setAttributeNS(null, "y", y);
+                adorner.rect.setAttributeNS(null, "height", Math.abs(height));
+            }
+            else {
+                adorner.rect.setAttributeNS(null, "height", height);
+            }
+        }
+        if (resizerID == "rect_left" || resizerID == "rect_left_top" || resizerID == "rect_left_bottom") {
+            var width = adorner.initWidth + (adorner.startX - evt.clientX);
+            if (width <= 0) {
+                adorner.rect.setAttributeNS(null, "x", adorner.initX + adorner.initWidth);
+                adorner.rect.setAttributeNS(null, "width", Math.abs(width));
+            }
+            else {
+                var x = adorner.initX - (adorner.startX - evt.clientX);
+                if (x < 0) {
+                    x = 0;
+                }
+                else {
+                    adorner.rect.setAttributeNS(null, "width", width);
+                }
+                adorner.rect.setAttributeNS(null, "x", x);
+            }
         }
     }
 
