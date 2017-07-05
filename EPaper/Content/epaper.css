@@ -11,3 +11,14 @@
     width: 7px;
     height: 7px;
 }
+
+.e_rect_display {
+    fill: transparent;
+    stroke-width: 1;
+    stroke: #d00000;
+}
+    .e_rect_display:hover {
+        stroke: #eb0000;
+        fill: #add2ea;
+        opacity:0.8;
+    }

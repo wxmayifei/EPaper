@@ -29,6 +29,9 @@ namespace EPaper
                 case "GetEPaperDetails":
                     GetEPaperDetails(context);
                     break;
+                case "GetEPaper":
+                    GetEPaper(context);
+                    break;
                 case "GetTopEPapers":
                     GetTopEPapers(context);
                     break;
@@ -38,65 +41,117 @@ namespace EPaper
 
         public void SaveEPaper(HttpContext context)
         {
+            RemoveExtraImages(context.Server.MapPath("~/EPapers/Temp"));
+            var dataID = 0;
+            try
+            {
+                dataID = Convert.ToInt32(context.Request.Form["dataid"]);
+            }
+            catch { }
             //process image
             var rootPath = context.Server.MapPath("~/EPapers");
-            var file = Path.Combine(rootPath, "Temp", Path.GetFileName(context.Request.Form["image"]));
-            if (!File.Exists(file))
+            var file = "";
+            Models.EPaper ePaper = null;
+            var isNew = false;
+            using (var dbContext = new Models.DBAccess())
             {
-                context.Response.Write(JsonConvert.SerializeObject(new Models.ReturnResult() { IsSuccess = false, Message = "Couldn't find EPaper" }));
-                return;
-            }
-            //save to DB
-            var shapes = JArray.Parse(context.Request.Form["shapes"]);
-            var prefixPath = DateTime.Now.ToString("yyyy/MM/dd");
-            var storeDir = Path.Combine(rootPath, prefixPath);
-            if (!Directory.Exists(storeDir))
-            {
-                Directory.CreateDirectory(storeDir);
-            }
-            var ePaper = new Models.EPaper();
-            ePaper.CreateTime = DateTime.Now;
-            var extenstion = Path.GetExtension(file);
-            using (var image = Image.FromFile(file))
-            {
-                var strSize = "{\"x\":" + image.Width + ",\"y\":" + image.Height;
-                ePaper.Path = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion;
-                var size = GetSize(image.Width, image.Height, 180, 135);
-                strSize += ",\"x1\":" + size.Item1 + ",\"y1\":" + size.Item2;
-                var thumbImage = image.GetThumbnailImage(size.Item1, size.Item2, () => { return false; }, IntPtr.Zero);
-                ePaper.ThumbPath = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion;
-                thumbImage.Save(Path.Combine(rootPath, ePaper.ThumbPath));
-                size = GetSize(image.Width, image.Height, 600, 800);
-                strSize += ",\"x2\":" + size.Item1 + ",\"y2\":" + size.Item2 + "}";
-                thumbImage = image.GetThumbnailImage(size.Item1, size.Item2, () => { return false; }, IntPtr.Zero);
-                ePaper.BigThumbPath = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion;
-                thumbImage.Save(Path.Combine(rootPath, ePaper.BigThumbPath));
-                ePaper.Size = strSize;
-                using (var dbContext = new Models.DBAccess())
+                if (dataID > 0)
                 {
-                    dbContext.EPapers.Add(ePaper);
-                    dbContext.SaveChanges();
+                    ePaper = dbContext.EPapers.FirstOrDefault(m => m.ID == dataID);
+                }
+                if (ePaper == null)
+                {
+                    file = Path.Combine(rootPath, "Temp", Path.GetFileName(context.Request.Form["image"]));
+                }
+                else
+                {
+                    file = Path.Combine(rootPath, ePaper.Path);
+                }
+                if (!File.Exists(file))
+                {
+                    context.Response.Write(JsonConvert.SerializeObject(new Models.ReturnResult() { IsSuccess = false, Message = "Couldn't find EPaper" }));
+                    return;
+                }
+                //save to DB
+                var shapes = JArray.Parse(context.Request.Form["shapes"]);
+                var prefixPath = DateTime.Now.ToString("yyyy/MM/dd");
+                var storeDir = Path.Combine(rootPath, prefixPath);
+                if (!Directory.Exists(storeDir))
+                {
+                    Directory.CreateDirectory(storeDir);
+                }
+                var extenstion = Path.GetExtension(file);
+                using (var image = Image.FromFile(file))
+                {
+                    if (ePaper == null)
+                    {
+                        isNew = true;
+                        ePaper = new Models.EPaper()
+                        {
+                            CreateTime = DateTime.Now
+                        };
+                        var strSize = "{\"x\":" + image.Width + ",\"y\":" + image.Height;
+                        ePaper.Path = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion;
+                        var size = GetSize(image.Width, image.Height, 180, 135);
+                        strSize += ",\"x1\":" + size.Item1 + ",\"y1\":" + size.Item2;
+                        var thumbImage = image.GetThumbnailImage(size.Item1, size.Item2, () => { return false; }, IntPtr.Zero);
+                        ePaper.ThumbPath = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion;
+                        thumbImage.Save(Path.Combine(rootPath, ePaper.ThumbPath));
+                        size = GetSize(image.Width, image.Height, 660, 880);
+                        strSize += ",\"x2\":" + size.Item1 + ",\"y2\":" + size.Item2 + "}";
+                        thumbImage = image.GetThumbnailImage(size.Item1, size.Item2, () => { return false; }, IntPtr.Zero);
+                        ePaper.BigThumbPath = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion;
+                        thumbImage.Save(Path.Combine(rootPath, ePaper.BigThumbPath));
+                        ePaper.Size = strSize;
+                        dbContext.EPapers.Add(ePaper);
+                        dbContext.SaveChanges();
+                    }
                     foreach (var item in shapes)
                     {
+                        Models.EPaperDetail detail = null;
+                        var detailID = item.Value<int>("dataid");
+                        if (detailID > 0)
+                        {
+                            detail = ePaper.EPaperDetails.FirstOrDefault(m => m.ID == detailID);
+                        }
                         if (item.Value<string>("type") == "rect")
                         {
-                            var ePaperDetail = new Models.EPaperDetail()
+                            if (detail == null)
                             {
-                                EPaperID = ePaper.ID,
-                                Shape = JsonConvert.SerializeObject(item),
-                                Path = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion
-                            };
+                                detail = new Models.EPaperDetail()
+                                {
+                                    EPaperID = ePaper.ID,
+                                    Shape = JsonConvert.SerializeObject(item),
+                                    Path = prefixPath + "/" + Guid.NewGuid().ToString() + extenstion
+                                };
+                                dbContext.EPaperDetails.Add(detail);
+                            }
+                            else
+                            {
+                                TryDeleteFile(Path.Combine(rootPath, detail.Path));
+                            }
+                            detail.Shape = JsonConvert.SerializeObject(item);
                             using (Image block = CutImage(image, item.Value<int>("x"), item.Value<int>("y"), item.Value<int>("width"), item.Value<int>("height")))
                             {
-                                block.Save(Path.Combine(rootPath, ePaperDetail.Path));
+                                block.Save(Path.Combine(rootPath, detail.Path));
                             }
-                            dbContext.EPaperDetails.Add(ePaperDetail);
+                        }
+                    }
+                    for (var i = 0; i < ePaper.EPaperDetails.Count; i++)
+                    {
+                        if (shapes.FirstOrDefault(m => m.Value<int>("dataid") == ePaper.EPaperDetails.ElementAt(i).ID) == null)
+                        {
+                            dbContext.EPaperDetails.Remove(ePaper.EPaperDetails.ElementAt(i));
+                            i--;
                         }
                     }
                     dbContext.SaveChanges();
                 }
             }
-            File.Delete(file);
+            if (isNew)
+            {
+                File.Move(file, Path.Combine(rootPath, ePaper.Path));
+            }
         }
 
         private Image CutImage(Image source, int x, int y, int width, int height)
@@ -124,12 +179,26 @@ namespace EPaper
             return new Tuple<int, int>(imgWidth, imgHeight);
         }
 
+        private void RemoveExtraImages(string path)
+        {
+            //remove the images which uploaded over 24 hours
+            var files = Directory.GetFiles(path);
+            for (var i = 0; i < files.Length; i++)
+            {
+                if ((DateTime.Now - File.GetCreationTime(files[i])).TotalHours > 24)
+                {
+                    TryDeleteFile(files[i]);
+                    i--;
+                }
+            }
+        }
+
         private void GetEPaperDetails(HttpContext context)
         {
             var id = Convert.ToInt32(context.Request.Form["id"]);
             using (var dbContext = new Models.DBAccess())
             {
-                context.Response.Write(JsonConvert.SerializeObject(dbContext.EPaperDetails.Where(m => m.EPaperID == id).Select(m => new { m.ID, m.Shape }).ToList()));
+                context.Response.Write(JsonConvert.SerializeObject(dbContext.EPaperDetails.Where(m => m.EPaperID == id).Select(m => new { m.ID, m.Shape, m.Path }).ToList()));
             }
         }
 
@@ -162,6 +231,21 @@ namespace EPaper
             using (var dbContext = new Models.DBAccess())
             {
                 context.Response.Write(JsonConvert.SerializeObject(dbContext.EPapers.OrderByDescending(m => m.CreateTime).Take(20).Select(m => new { m.ID, m.BigThumbPath, m.ThumbPath, m.CreateTime, m.Size }).ToList()));
+            }
+        }
+
+        private void GetEPaper(HttpContext context)
+        {
+            var id = Convert.ToInt32(context.Request.Form["id"]);
+            using (var dbContext = new Models.DBAccess())
+            {
+                var epaper = dbContext.EPapers.FirstOrDefault(m => m.ID == id);
+                if (epaper == null)
+                {
+                    return;
+                }
+                epaper.EPaperDetails.ToList();
+                context.Response.Write(JsonConvert.SerializeObject(epaper, new JsonSerializerSettings() { ReferenceLoopHandling = ReferenceLoopHandling.Ignore }));
             }
         }
 

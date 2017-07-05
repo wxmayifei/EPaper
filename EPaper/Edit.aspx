@@ -21,18 +21,22 @@
                     <span class="glyphicon glyphicon-floppy-disk"></span>
                     <span>Save</span>
                 </button>
+                <button class="btn btn-danger" onclick="return clearAll()">
+                    <span class="glyphicon glyphicon-remove-circle"></span>
+                    <span>Clear</span>
+                </button>
                 <button class="btn btn-warning" onclick="return redirectToIndex()">
-                    <span class="glyphicon glyphicon glyphicon-arrow-left"></span>
+                    <span class="glyphicon glyphicon-arrow-left"></span>
                     <span>Back</span>
                 </button>
             </div>
-            <div class="form-group">
+            <div id="uploadcontainer" class="form-group">
                 <label for="exampleInputEmail1">Upload EPaper</label>
                 <input type="file" id="file1" name="file1" onchange="uploadEPaper()" />
                 <p class="help-block">The first step is upload a EPaper</p>
             </div>
             <div class="row">
-                <div class="col-md-12" style="overflow: hidden; height: 600px; background-color: #EFEFEF">
+                <div id="divContainer" class="col-md-12" style="overflow: hidden; height: 600px; background-color: #EFEFEF">
                     <svg id="svg1" style="position: absolute; left: 10px; top: 10px"></svg>
                 </div>
             </div>
@@ -59,12 +63,48 @@
 </body>
 </html>
 <script type="text/javascript">
+    $(function () {
+        if (dataid == "0") {
+            document.getElementById("divContainer").style.height = (document.documentElement.clientHeight - 230) + "px"
+            return;
+        }
+        $("#uploadcontainer").remove();
+        document.getElementById("divContainer").style.height = (document.documentElement.clientHeight - 130) + "px"
+        $.ajax({
+            url: "<%=this.ResolveClientUrl("~/Process.ashx")%>",
+            type: "POST",
+            data: { m: "GetEPaper", id: dataid },
+            dataType: "json",
+            success: function (result) {
+                var size = $.parseJSON(result.Size);
+                loadImage({ url: baseurl + result.Path, width: size.x, height: size.y });
+                var _svg = document.getElementById("svg1");
+                for (var i = 0; i < result.EPaperDetails.length; i++) {
+                    var shape = $.parseJSON(result.EPaperDetails[i].Shape);
+                    var rect = document.createElementNS(ns, "rect");
+                    rect.setAttributeNS(null, "x", shape.x);
+                    rect.setAttributeNS(null, "dataid", result.EPaperDetails[i].ID);
+                    rect.setAttributeNS(null, "y", shape.y);
+                    rect.setAttributeNS(null, "class", "e_rect_focus");
+                    rect.setAttributeNS(null, "width", shape.width);
+                    rect.setAttributeNS(null, "height", shape.height);
+                    rect.onclick = onrectclick;
+                    rect.onmousedown = onrectmousedown;
+                    _svg.appendChild(rect);
+                }
+            }
+        });
+    });
+
     function redirectToIndex() {
         window.location.href = "<%=this.ResolveClientUrl("~/Index.aspx") %>";
         return false;
     }
 
     function save() {
+        if (!document.getElementById("rect_left_top")) {
+            return;
+        }
         var _svg = document.getElementById("svg1");
         var shapes = [];
         for (var i = 0; i < _svg.childNodes.length; i++) {
@@ -80,6 +120,7 @@
                     shape.y = _svg.childNodes[i].y.baseVal.value;
                     shape.height = _svg.childNodes[i].height.baseVal.value;
                     shape.width = _svg.childNodes[i].width.baseVal.value;
+                    shape.dataid = _svg.childNodes[i].getAttributeNS(null, "dataid") || 0;
                     break;
             }
             shapes.push(shape);
@@ -88,7 +129,7 @@
         $.ajax({
             url: "<%=this.ResolveClientUrl("~/Process.ashx")%>",
             type: "POST",
-            data: { m: "SaveEPaper", image: imageUrl, shapes: JSON.stringify(shapes) },
+            data: { m: "SaveEPaper", dataid: dataid, image: imageUrl, shapes: JSON.stringify(shapes) },
             success: function () {
                 $("#searchModal").modal("hide");
                 redirectToIndex();
@@ -105,17 +146,8 @@
             dataType: "json",
             success: function (data, status) {
                 imageUrl = data.url;
-                $("#svg1").css({ backgroundImage: "url(" + data.url + ")", width: data.width + "px", height: data.height + "px", left: "10px", top: "10px" });
-                if (!document.getElementById("rect_left_top")) {
-                    createResizer("rect_left_top");
-                    createResizer("rect_right_bottom");
-                    createResizer("rect_top");
-                    createResizer("rect_bottom");
-                    createResizer("rect_right_top");
-                    createResizer("rect_left_bottom");
-                    createResizer("rect_right");
-                    createResizer("rect_left");
-                }
+                loadImage(data);
+                clearAll();
             },
             error: function () {
                 //alert()
@@ -131,6 +163,20 @@
                 up.onchange = uploadEPaper;
             }
         });
+    }
+
+    function loadImage(data) {
+        $("#svg1").css({ backgroundImage: "url(" + data.url + ")", width: data.width + "px", height: data.height + "px", left: "10px", top: "10px" });
+        if (!document.getElementById("rect_left_top")) {
+            createResizer("rect_left_top");
+            createResizer("rect_right_bottom");
+            createResizer("rect_top");
+            createResizer("rect_bottom");
+            createResizer("rect_right_top");
+            createResizer("rect_left_bottom");
+            createResizer("rect_right");
+            createResizer("rect_left");
+        }
     }
 
     function createResizer(id) {
@@ -189,7 +235,6 @@
                 }
                 adorner = { element: this };
                 $("#svg1").bind("mousemove", onsvgmousemove).bind("mouseup", onsvgrelease);
-                //.bind("mouseout", onsvgrelease)
             }
         }, 120);
         evt.stopPropagation();
@@ -236,6 +281,8 @@
             adorner.rect = document.createElementNS(ns, "rect");
             adorner.rect.setAttributeNS(null, "x", startX - adorner.pos.x);
             adorner.rect.setAttributeNS(null, "y", startY - adorner.pos.y);
+            adorner.rect.setAttributeNS(null, "width", 20);
+            adorner.rect.setAttributeNS(null, "height", 20);
             adorner.rect.setAttributeNS(null, "class", "e_rect_focus");
             this.appendChild(adorner.rect);
             adorner.rect.onclick = onrectclick;
@@ -285,9 +332,34 @@
         $(document.body).bind("mousemove", onrectmousemove_body).bind("mouseup", onrectrelease_body);
     }
 
+    document.body.onkeydown = function (evt) {
+        if (evt.keyCode == 46) {
+            if (!choosed) {
+                return;
+            }
+            hideResizer();
+            choosed.parentNode.removeChild(choosed);
+            choosed = null;
+        }
+    }
+
     var onrectmousemove_body = function (evt) {
-        adorner.rect.setAttributeNS(null, "x", adorner.x + evt.clientX - adorner.startX);
-        adorner.rect.setAttributeNS(null, "y", adorner.y + evt.clientY - adorner.startY);
+        var x = adorner.x + evt.clientX - adorner.startX
+        if (x < 0) {
+            x = 0;
+        }
+        else if (x + adorner.rect.width.baseVal.value > adorner.rect.parentNode.clientWidth) {
+            x = adorner.rect.parentNode.clientWidth - adorner.rect.width.baseVal.value;
+        }
+        var y = adorner.y + evt.clientY - adorner.startY
+        if (y < 0) {
+            y = 0;
+        }
+        else if (y + adorner.rect.height.baseVal.value > adorner.rect.parentNode.clientHeight) {
+            y = adorner.rect.parentNode.clientHeight - adorner.rect.height.baseVal.value;
+        }
+        adorner.rect.setAttributeNS(null, "x", x);
+        adorner.rect.setAttributeNS(null, "y", y);
     }
 
     var onrectrelease_body = function () {
@@ -450,6 +522,21 @@
         document.getElementById("rect_bottom").style.display = "none";
         document.getElementById("rect_left_bottom").style.display = "none";
         document.getElementById("rect_left").style.display = "none";
+    }
+
+    function clearAll() {
+        if (!document.getElementById("rect_left_top")) {
+            return false;
+        }
+        var _svg = document.getElementById("svg1");
+        for (var i = 0; i < _svg.childNodes.length; i++) {
+            if (_svg.childNodes[i].getAttributeNS(null, "resizer")) {
+                continue;
+            }
+            _svg.removeChild(_svg.childNodes[i]);
+            i--;
+        }
+        return false;
     }
 </script>
 

@@ -11,7 +11,18 @@ namespace EPaper
     {
         protected void Page_Load(object sender, EventArgs e)
         {
-
+            var script = "";
+            try
+            {
+                var dataid = int.Parse(Request.QueryString["id"]);
+                script += "var dataid=\"" + dataid + "\";";
+            }
+            catch
+            {
+                script += "var dataid=\"0\";";
+            }
+            script += "var baseurl=\"" + this.ResolveUrl("~/EPapers/") + "\";";
+            this.ClientScript.RegisterStartupScript(this.GetType(), "AA", script, true);
         }
     }
 }
