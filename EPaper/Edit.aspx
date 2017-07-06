@@ -29,6 +29,7 @@
                     <span class="glyphicon glyphicon-arrow-left"></span>
                     <span>Back</span>
                 </button>
+                 <span class="text-info">You could drag the picture with press "ALT" key</span>
             </div>
             <div id="uploadcontainer" class="form-group">
                 <label for="exampleInputEmail1">Upload EPaper</label>
